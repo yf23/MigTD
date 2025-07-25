@@ -546,6 +546,42 @@ fn exchange_info(info: &MigrationInformation) -> Result<ExchangeInformation> {
     Ok(exchange_info)
 }
 
+//arthig temp change
+pub fn get_field_min_max() -> Result<(u64, u64)> {
+    // First try GSM_FIELD_MIN_EXPORT_VERSION which will succeed for source TDs
+    // and GSM_FIELD_MIN_IMPORT_VERSION for destination TDs.
+
+    let (_, rd_min) = match tdcall_sys_rd(GSM_FIELD_MIN_EXPORT_VERSION) {
+        Ok((rdx, rd_min)) => (rdx, rd_min),
+        Err(e) => {
+            log::error!("Failed to read GSM_FIELD_MIN_EXPORT_VERSION: {:?}", e);
+            match tdcall_sys_rd(GSM_FIELD_MIN_IMPORT_VERSION) {
+                Ok((rdx, rd_min)) => (rdx, rd_min),
+                Err(e) => {
+                    log::error!("Failed to read GSM_FIELD_MIN_IMPORT_VERSION: {:?}", e);
+                    return Err(MigrationResult::TdxModuleError);
+                }
+            }
+        }
+    };
+
+    let (_, rd_max) = match tdcall_sys_rd(GSM_FIELD_MAX_EXPORT_VERSION) {
+        Ok((rdx, rd_max)) => (rdx, rd_max),
+        Err(e) => {
+            log::error!("Failed to read GSM_FIELD_MAX_EXPORT_VERSION: {:?}", e);
+            match tdcall_sys_rd(GSM_FIELD_MAX_IMPORT_VERSION) {
+                Ok((rdx, rd_max)) => (rdx, rd_max),
+                Err(e) => {
+                    log::error!("Failed to read GSM_FIELD_MAX_IMPORT_VERSION: {:?}", e);
+                    return Err(MigrationResult::TdxModuleError);
+                }
+            }
+        }
+    };
+
+    Ok((rd_min, rd_max))
+}
+
 fn read_msk(mig_info: &MigtdMigrationInformation, msk: &mut MigrationSessionKey) -> Result<()> {
     for idx in 0..msk.fields.len() {
         let ret = tdx::tdcall_servtd_rd(

@@ -40,6 +40,12 @@ pub fn runtime_main() {
     // Dump basic information of MigTD
     basic_info();
 
+    //arthig
+    // Get the minimum field version for migration
+    let (min_version, max_version) =
+        get_field_min_max().unwrap_or_else(|_| panic!("Failed to get field minimum version"));
+    info!("ACC Hello World MigTD min_version = {}, max_version = {}\n", min_version, max_version);
+
     // Measure the input data
     do_measurements();
 
