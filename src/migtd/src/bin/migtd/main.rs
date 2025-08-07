@@ -16,7 +16,13 @@ use migtd::migration::data::MigrationInformation;
 use migtd::migration::session::*;
 use migtd::migration::MigrationResult;
 use migtd::{config, event_log, migration};
+use sha2::Sha384;
+use sha2::{Digest, Sha256};
 use spin::Mutex;
+use td_payload::print;
+use tdx_tdcall::tdreport;
+use tdx_tdcall::TdCallError;
+use zerocopy::AsBytes;
 
 const MIGTD_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -24,6 +30,8 @@ const MIGTD_VERSION: &str = env!("CARGO_PKG_VERSION");
 const TAGGED_EVENT_ID_POLICY: u32 = 0x1;
 const TAGGED_EVENT_ID_ROOT_CA: u32 = 0x2;
 const TAGGED_EVENT_ID_TEST: u32 = 0x32;
+
+const TDINFO_SIZE: usize = core::mem::size_of::<tdreport::TdInfo>();
 
 #[no_mangle]
 pub extern "C" fn main() {
@@ -40,14 +48,19 @@ pub fn runtime_main() {
     // Dump basic information of MigTD
     basic_info();
 
-    //arthig
     // Get the minimum field version for migration
     let (min_version, max_version) =
         get_field_min_max().unwrap_or_else(|_| panic!("Failed to get field minimum version"));
-    info!("ACC Hello World MigTD min_version = {}, max_version = {}\n", min_version, max_version);
+    info!(
+        "ACC Hello World MigTD min_version = {}, max_version = {}\n",
+        min_version, max_version
+    );
 
     // Measure the input data
     do_measurements();
+
+    // calculate the hash of the TD info and log it
+    print_td_info_hash();
 
     migration::event::register_callback();
 
@@ -82,6 +95,20 @@ fn do_measurements() {
 
     // Get root certificate from CFV and measure it into RMTR
     get_ca_and_measure(event_log);
+}
+
+fn print_td_info_hash() {
+    let tdx_report = tdreport::tdcall_report(&[0u8; tdreport::TD_REPORT_ADDITIONAL_DATA_SIZE]);
+    info!("tdx_report: {:?}", tdx_report);
+
+    let td_info = tdx_report.unwrap().td_info;
+    info!("td_info: {:?}", td_info);
+
+    let mut hasher = Sha384::new();
+    hasher.update(td_info.as_bytes());
+
+    let hash = hasher.finalize();
+    info!("TD Info Hash: {:x}", hash);
 }
 
 fn measure_test_feature(event_log: &mut [u8]) {

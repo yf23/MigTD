@@ -639,6 +639,7 @@ dependencies = [
  "r-efi",
  "rust_std_stub",
  "scroll",
+ "sha2",
  "spin 0.9.8",
  "td-benchmark",
  "td-layout",
@@ -1257,6 +1258,7 @@ dependencies = [
  "scroll",
  "spin 0.9.8",
  "x86_64",
+ "zerocopy",
 ]
 
 [[package]]
