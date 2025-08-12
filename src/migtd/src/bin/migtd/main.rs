@@ -143,10 +143,25 @@ fn handle_pre_mig() {
 
             if let Some(request) = new_request {
                 async_runtime::add_task(async move {
-                    let status = exchange_msk(&request)
-                        .await
-                        .map(|_| MigrationResult::Success)
-                        .unwrap_or_else(|e| e);
+                    let exchange_result = exchange_msk(&request).await;
+
+                    // Determine the status based on enabled features
+                    let status = {
+                        #[cfg(feature = "test_force_success_status")]
+                        {
+                            MigrationResult::Success
+                        }
+                        #[cfg(all(feature = "test_force_unsupported_status", not(feature = "test_force_success_status")))]
+                        {
+                            MigrationResult::Unsupported
+                        }
+                        #[cfg(not(any(feature = "test_force_success_status", feature = "test_force_unsupported_status")))]
+                        {
+                            exchange_result
+                                .map(|_| MigrationResult::Success)
+                                .unwrap_or_else(|e| e)
+                        }
+                    };
 
                     #[cfg(feature = "vmcall-raw")]
                     {
