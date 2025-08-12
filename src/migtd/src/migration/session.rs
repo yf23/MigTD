@@ -127,7 +127,7 @@ pub fn query() -> Result<()> {
 }
 
 pub async fn wait_for_request() -> Result<MigrationInformation> {
-    #[cfg(feature = "vmcall-raw")]
+    #[cfg(any(feature = "vmcall-raw"))]
     {
         let num_rsp_pages: usize = 1;
         let mut rsp_mem = SharedMemory::new(num_rsp_pages).ok_or(MigrationResult::OutOfResource)?;
@@ -398,6 +398,66 @@ pub fn report_status(status: u8, request_id: u64) -> Result<()> {
     Ok(())
 }
 
+ 
+#[cfg(feature = "main")]
+#[cfg(feature = "vmcall-raw")]
+pub async fn exchange_msk_stub_vmcall_raw(info: &MigrationInformation) -> Result<()> {
+
+    use log::info;
+    use vmcall_raw::stream::VmcallRaw;
+    info!("Entering handle_pre_mig_stub \n");
+    let mut vmcall_raw_instance = VmcallRaw::new_with_mid(info.mig_info.mig_request_id)
+            .map_err(|_e| MigrationResult::InvalidParameter)?;
+
+    vmcall_raw_instance
+        .connect()
+        .await
+        .map_err(|_e| MigrationResult::InvalidParameter)?;
+    let mut transport = vmcall_raw_instance;
+
+    let mut remote_information = ExchangeInformation::default();
+    let mut exchange_information = exchange_info(&info)?;
+
+    // Establish trasport layer connection and negotiate the MSK
+    if info.is_src() {
+
+        // MigTD-S send Migration Session Forward key to peer
+        let _ = transport.send(exchange_information.as_bytes(), 1).await.map_err(|_| MigrationResult::NetworkError)?;
+
+        let _ = transport.recv(remote_information.as_bytes_mut(), 1).await.map_err(|_| MigrationResult::NetworkError)?;
+
+        /* if remote_information.len() < size_of::<ExchangeInformation>() {
+            return Err(MigrationResult::NetworkError);
+        } */
+        
+        transport.shutdown().await.map_err(|_e| MigrationResult::InvalidParameter)?;
+    } else {
+        // server
+
+        let _ = transport.send(exchange_information.as_bytes(), 1).await.map_err(|_| MigrationResult::NetworkError)?;
+
+        let _ = transport.recv(remote_information.as_bytes_mut(), 1).await.map_err(|_| MigrationResult::NetworkError)?;
+
+        /* if remote_information.len() < size_of::<ExchangeInformation>() {
+            return Err(MigrationResult::NetworkError);
+        } */
+
+        transport.shutdown().await.map_err(|_e| MigrationResult::InvalidParameter)?;
+    }
+
+    let mig_ver = cal_mig_version(info.is_src(), &exchange_information, &remote_information)?;
+    set_mig_version(info, mig_ver)?;
+    write_msk(&info.mig_info, &remote_information.key)?;
+
+    log::info!("Set MSK and report status\n");
+    exchange_information.key.clear();
+    remote_information.key.clear();
+
+    Ok(())
+
+}
+
+
 #[cfg(feature = "main")]
 pub async fn exchange_msk(info: &MigrationInformation) -> Result<()> {
     use crate::driver::ticks::with_timeout;
@@ -430,8 +490,7 @@ pub async fn exchange_msk(info: &MigrationInformation) -> Result<()> {
         transport = port;
     };
 
-    #[cfg(not(feature = "virtio-serial"))]
-    #[cfg(not(feature = "vmcall-raw"))]
+    #[cfg(all(not(feature = "virtio-serial"), not(feature = "vmcall-raw")))]
     {
         use vsock::{stream::VsockStream, VsockAddr};
 
@@ -546,7 +605,6 @@ fn exchange_info(info: &MigrationInformation) -> Result<ExchangeInformation> {
     Ok(exchange_info)
 }
 
-//arthig temp change
 pub fn get_field_min_max() -> Result<(u64, u64)> {
     // First try GSM_FIELD_MIN_EXPORT_VERSION which will succeed for source TDs
     // and GSM_FIELD_MIN_IMPORT_VERSION for destination TDs.

@@ -399,32 +399,3 @@ status to the host VMM. Some common error codes and their causes are summarized 
 | 6          | TLS error, common causes include failure to verify the quote sent by the remote MigTD, or the handshake being aborted by the remote MigTD. The handshake is usually aborted by the remote MigTD due to its inability to obtain a quote or failure to meet the remote migration policy, the remote MigTD will report error code 7 or 8 in such cases. |
 | 7          | MigTD is unable to obtain the quote. |
 | 8          | The quote report from the remote MigTD does not meet the requirements of the migration policy. |
-
-## 
-How to get min_version for TDX
-let min_version = tdcall_sys_rd(field_min)?.1; 
-
-Call stack and dependencies
-main
-runtime_main
-handle_pre_mig
-exchange_msk
-exchange_info
-
-const GSM_FIELD_MIN_EXPORT_VERSION: u64 = 0x2000000100000001;
-const GSM_FIELD_MAX_EXPORT_VERSION: u64 = 0x2000000100000002;
-let (field_min, field_max) = if info.is_src() {
-        (GSM_FIELD_MIN_EXPORT_VERSION, GSM_FIELD_MAX_EXPORT_VERSION)
-    } else {
-        (GSM_FIELD_MIN_IMPORT_VERSION, GSM_FIELD_MAX_IMPORT_VERSION)
-    };
- let min_version = tdcall_sys_rd(field_min)?.1;
-   TDVMCALL_SYS_RD
-
-## Hello World call stack
-
-main
-runtime_main
-    basic_info();
-      info!("MigTD Version - {}\n", MIGTD_VERSION);
-      info!("ACC Hello World MigTD\n");

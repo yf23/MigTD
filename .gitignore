@@ -1,7 +1,7 @@
 *~
 
 # Cargo Junk
-/target/
+target/
 *.bin
 *.o
 *.obj
@@ -25,5 +25,5 @@ test_data
 # vscode
 .vscode
 
-/deps/
+deps/
 

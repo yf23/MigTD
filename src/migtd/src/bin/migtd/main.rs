@@ -74,6 +74,9 @@ pub fn runtime_main() {
 
     // Handle the migration request from VMM
     handle_pre_mig();
+
+    // Hacked 
+    handle_pre_mig_stub_vmcall_raw();
 }
 
 fn basic_info() {
@@ -99,16 +102,16 @@ fn do_measurements() {
 
 fn print_td_info_hash() {
     let tdx_report = tdreport::tdcall_report(&[0u8; tdreport::TD_REPORT_ADDITIONAL_DATA_SIZE]);
-    info!("tdx_report: {:?}", tdx_report);
+    //info!("tdx_report: {:?}\n", tdx_report);
 
     let td_info = tdx_report.unwrap().td_info;
-    info!("td_info: {:?}", td_info);
+    info!("td_info: {:?}\n", td_info);
 
     let mut hasher = Sha384::new();
     hasher.update(td_info.as_bytes());
 
     let hash = hasher.finalize();
-    info!("TD Info Hash: {:x}", hash);
+    info!("TD Info Hash: {:x}\n", hash);
 }
 
 fn measure_test_feature(event_log: &mut [u8]) {
@@ -138,6 +141,58 @@ fn get_ca_and_measure(event_log: &mut [u8]) {
         .expect("Failed to log SGX root CA\n");
 
     attestation::root_ca::set_ca(root_ca).expect("Invalid root certificate\n");
+}
+
+#[cfg(feature = "main")]
+#[cfg(any(feature = "vmcall-raw"))]
+fn handle_pre_mig_stub_vmcall_raw() {
+
+    const MAX_CONCURRENCY_REQUESTS: usize = 16;
+
+    // Set by `wait_for_request` async task when getting new request from VMM.
+    static PENDING_REQUEST: Mutex<Option<MigrationInformation>> = Mutex::new(None);
+
+    async_runtime::add_task(async move {
+        loop {
+            poll_fn(|_cx| {
+                // Wait until the pending request is taken by a new task
+                if PENDING_REQUEST.lock().is_none() {
+                    Poll::Ready(())
+                } else {
+                    Poll::Pending
+                }
+            })
+            .await;
+
+            if let Ok(request) = wait_for_request().await {
+                *PENDING_REQUEST.lock() = Some(request);
+            }
+        }
+    });
+
+    let mut queued = async_runtime::poll_tasks();
+
+    loop {
+        // The async task waiting for VMM response is always in the queue
+        if queued < MAX_CONCURRENCY_REQUESTS + 1 {
+            let new_request = PENDING_REQUEST.lock().take();
+
+            if let Some(request) = new_request {
+                async_runtime::add_task(async move {
+                    let status = exchange_msk_stub_vmcall_raw(&request)
+                        .await
+                        .map(|_| MigrationResult::Success)
+                        .unwrap_or_else(|e| e);
+
+                    let _ = report_status(status as u8, request.mig_info.mig_request_id).await;
+
+                    REQUESTS.lock().remove(&request.mig_info.mig_request_id);
+                });
+            }
+        }
+        queued = async_runtime::poll_tasks();
+        sleep();
+    }
 }
 
 fn handle_pre_mig() {
